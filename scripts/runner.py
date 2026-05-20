@@ -19,8 +19,8 @@ def run_pipeline(novel_root=None, episode_num="011"):
         sys.stdout.reconfigure(encoding='utf-8')
         
     if not novel_root:
-        print("[Error] novel_root path is required. Please provide a target novel directory.")
-        print('Example: venv\\Scripts\\python.exe scripts/runner.py "j:\\eBooks\\Converted_65001\\[TXT소설]\\창작소설\\성인무협_십이경락의밤" "010"')
+        print('[Error] novel_root path is required. Please provide a target novel directory.')
+        print('Example: venv\\Scripts\\python.exe scripts/runner.py "C:\\path\\to\\your\\novel" "010"')
         return
         
     print(f"Target Novel Root: {novel_root}")

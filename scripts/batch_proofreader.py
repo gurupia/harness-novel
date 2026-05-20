@@ -74,7 +74,7 @@ def run_batch_proofread(novel_root, start_ep, end_ep):
 def main():
     if len(sys.argv) < 4:
         print("Usage: python batch_proofreader.py <novel_root_directory> <start_episode_num> <end_episode_num>")
-        print("Example: python batch_proofreader.py j:\\eBooks\\MyNovel 1 10")
+        print("Example: python batch_proofreader.py C:\\path\\to\\MyNovel 1 10")
         sys.exit(1)
 
     novel_root = sys.argv[1]

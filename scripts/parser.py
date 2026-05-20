@@ -282,9 +282,19 @@ if __name__ == "__main__":
     import sys
     if hasattr(sys.stdout, 'reconfigure'):
         sys.stdout.reconfigure(encoding='utf-8')
-    root = r"j:\eBooks\Converted_65001\[TXT소설]\창작소설\성인무협_십이경락의밤"
+        
+    if len(sys.argv) < 2:
+        print("Usage: python parser.py <novel_root_path>")
+        print("Please provide a valid novel folder path as an argument.")
+        sys.exit(1)
+        
+    root = sys.argv[1]
+    print(f"Analyzing path: {root}")
     print("Characters Context:", get_context(root, ["백운", "설하"]))
     print("Open Foreshadowing:", get_open_foreshadowing(root))
-    print("Episode Memory (Ep 10):", get_episode_memory(root, 10, 3))
+    try:
+        print("Episode Memory (Ep 10):", get_episode_memory(root, 10, 3))
+    except Exception as e:
+        print(f"Episode Memory test skipped: {e}")
 
 
