@@ -31,7 +31,7 @@ def run_pipeline(novel_root=None, episode_num="011"):
     config_path = os.path.join(novel_root, "novel-config.md")
     if os.path.exists(config_path):
         try:
-            with open(config_path, "r", encoding="utf-8") as f:
+            with open(config_path, "r", encoding="utf-8", errors="ignore") as f:
                 config_text = f.read()
             if "무협" in config_text:
                 genre = "무협"
@@ -54,7 +54,7 @@ def run_pipeline(novel_root=None, episode_num="011"):
     config_path = os.path.join(novel_root, "novel-config.md")
     if os.path.exists(config_path):
         try:
-            with open(config_path, "r", encoding="utf-8") as f:
+            with open(config_path, "r", encoding="utf-8", errors="ignore") as f:
                 config_lines = f.readlines()
             for line in config_lines:
                 if "핵심 분석 캐릭터 리스트" in line:
@@ -66,6 +66,58 @@ def run_pipeline(novel_root=None, episode_num="011"):
         except Exception as e:
             print(f"[Warning] Failed to parse character names from novel-config.md: {e}")
             
+    # ----------------------------------------------------
+    # 등장 인물 동적 필터링 (Dynamic Character Filtering)
+    # 이번 에피소드 관련 기획서/집필계획 텍스트를 검색하여 실제 등장/언급되는 인물만 선별 주입
+    # ----------------------------------------------------
+    active_characters = []
+    search_files = [
+        os.path.join(novel_root, "03_줄거리", "기획서.md"),
+        os.path.join(novel_root, "03_줄거리", "집필계획.md"),
+        os.path.join(novel_root, "03_줄거리", f"Ep_{episode_num}_Review.md")
+    ]
+    
+    search_text = ""
+    for sf in search_files:
+        if os.path.exists(sf):
+            try:
+                with open(sf, "r", encoding="utf-8", errors="ignore") as f:
+                    search_text += f.read() + "\n"
+            except Exception:
+                pass
+                
+    relevant_section = ""
+    if search_text:
+        try:
+            target_num = int(re.findall(r"\d+", str(episode_num))[0])
+            ep_patterns = [
+                rf"Ep[_\.\s]*0*{target_num}\b",
+                rf"0*{target_num}화\b"
+            ]
+            for pattern in ep_patterns:
+                matches = list(re.finditer(pattern, search_text, re.IGNORECASE))
+                if matches:
+                    for m in matches:
+                        start = max(0, m.start() - 300)
+                        end = min(len(search_text), m.end() + 1800)
+                        relevant_section += search_text[start:end] + "\n"
+                    break
+        except Exception:
+            pass
+            
+        if not relevant_section:
+            relevant_section = search_text
+            
+        for char_name in character_names:
+            if char_name in relevant_section:
+                active_characters.append(char_name)
+                
+    if active_characters:
+        print(f"[Info] Active characters filtered for Ep.{episode_num}: {active_characters} (Full list: {character_names})")
+        character_names = active_characters
+    else:
+        print(f"[Info] No specific active characters detected. Loading all: {character_names}")
+        
     characters_context = parser.get_context(novel_root, character_names)
     open_foreshadowing = parser.get_open_foreshadowing(novel_root)
     episode_memory = parser.get_episode_memory(novel_root, episode_num, window_size=3)
@@ -246,7 +298,7 @@ def run_pipeline(novel_root=None, episode_num="011"):
         for file_name in os.listdir(manuscript_dir):
             if file_name.startswith(episode_num) and file_name.endswith(".md"):
                 file_path = os.path.join(manuscript_dir, file_name)
-                with open(file_path, "r", encoding="utf-8") as f:
+                with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
                     mock_final_draft = f.read()
                 break
                 

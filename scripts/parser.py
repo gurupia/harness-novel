@@ -9,7 +9,7 @@ def parse_frontmatter(file_path):
     if not os.path.exists(file_path):
         return {}
         
-    with open(file_path, "r", encoding="utf-8") as f:
+    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
         content = f.read()
         
     match = re.match(r"^---\s*\n(.*?)\n---\s*\n", content, re.DOTALL)
@@ -29,7 +29,7 @@ def parse_markdown_table_to_dicts(file_path):
         return []
         
     results = []
-    with open(file_path, "r", encoding="utf-8") as f:
+    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
         lines = f.readlines()
         
     in_table = False
@@ -69,7 +69,7 @@ def parse_markdown_tables_to_dict_list(file_path):
     tables = []
     current_table = {}
     
-    with open(file_path, "r", encoding="utf-8") as f:
+    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
         lines = f.readlines()
         
     for line in lines:
@@ -91,10 +91,10 @@ def parse_markdown_tables_to_dict_list(file_path):
         
     return tables
 
-def get_context(novel_root, entity_names):
+def get_context(novel_root, entity_names, compact=True):
     """
     지정된 엔티티 이름들(예: ['강한울', 'Unit-X'])의 캐릭터 정보를 수집하여 반환합니다.
-    통합 설정집 파싱 및 기존 개별 마크다운 파싱을 모두 지원합니다.
+    compact=True 일 경우, 실시간 기획/집필에 불필요한 장기 아크 설정 필드를 필터링하여 토큰을 절약합니다.
     """
     context = {}
     
@@ -105,6 +105,8 @@ def get_context(novel_root, entity_names):
     ]
     # 추가적으로 novel_root 밑의 "인물" 혹은 "관계도"가 들어간 마크다운 파일 검색
     for root_dir, dirs, files in os.walk(novel_root):
+        # venv, .git, .vscode, node_modules 등 거대 또는 불필요한 시스템 폴더 진입 원천 차단
+        dirs[:] = [d for d in dirs if d not in ('.git', 'venv', '.venv', '.vscode', 'node_modules', '__pycache__')]
         for file in files:
             if file.endswith(".md") and ("인물" in file or "character" in file or "관계도" in file):
                 full_path = os.path.join(root_dir, file)
@@ -167,11 +169,26 @@ def get_context(novel_root, entity_names):
                     if data:
                         context[name] = data
                         
+    # 토큰 최적화 필터링
+    if compact:
+        excluded_keys = [
+            "거짓말", "Lie", "진실", "Truth", "유령", "Ghost", "아크 유형", 
+            "시작점", "촉발 사건", "저항", "중간 전환", "최악의 순간", "최종 선택", "도착점"
+        ]
+        for name, data in context.items():
+            if isinstance(data, dict):
+                filtered_data = {}
+                for k, v in data.items():
+                    if not any(ek in k for ek in excluded_keys):
+                        filtered_data[k] = v
+                context[name] = filtered_data
+
     return context
 
-def get_open_foreshadowing(novel_root):
+def get_open_foreshadowing(novel_root, exclude_description=True):
     """
     foreshadowing.md 파일의 테이블 또는 기존 Foreshadowing 디렉토리에서 미회수 상태의 떡밥 목록을 반환합니다.
+    exclude_description=True 일 경우, 토큰 다이어트를 위해 상세 설명(description) 필드를 제외합니다.
     """
     open_foreshadowing = []
     
@@ -189,8 +206,9 @@ def get_open_foreshadowing(novel_root):
                     "appeared": row.get("최초 등장", row.get("appeared", "")),
                     "resolve_plan": row.get("회수 예정 (부/화)", row.get("resolve_plan", "")),
                     "status": "OPEN",  # 시스템 호환용 상태명 통일
-                    "description": row.get("상세 설명 및 서사적 연계", row.get("description", ""))
                 }
+                if not exclude_description:
+                    mapped_data["description"] = row.get("상세 설명 및 서사적 연계", row.get("description", ""))
                 # 호환성을 위한 엔티티 네임 부여
                 mapped_data["entity_name"] = mapped_data["title"]
                 open_foreshadowing.append(mapped_data)
@@ -205,6 +223,10 @@ def get_open_foreshadowing(novel_root):
                 data = parse_frontmatter(file_path)
                 if data and (data.get("status") == "OPEN" or data.get("status") == "PENDING"):
                     entity_name = os.path.splitext(file_name)[0]
+                    # description 다이어트
+                    if exclude_description and "description" in data:
+                        data = dict(data)
+                        data.pop("description", None)
                     data["entity_name"] = entity_name
                     open_foreshadowing.append(data)
                     
@@ -214,6 +236,8 @@ def get_episode_memory(novel_root, target_ep, window_size=3):
     """
     episode_memory.md 파일의 테이블을 파싱하여,
     target_ep 직전의 에피소드 데이터를 window_size 만큼 슬라이딩 윈도우 형태로 반환합니다.
+    토큰 최적화를 위해 직전 1개 회차만 상세 묘사(장소/감정 상태 등)를 유지하고,
+    그 이전 회차들은 사건 요약만 남깁니다.
     """
     memory_file = os.path.join(novel_root, "03_줄거리", "episode_memory.md")
     if not os.path.exists(memory_file):
@@ -224,7 +248,13 @@ def get_episode_memory(novel_root, target_ep, window_size=3):
     try:
         target_num = int(re.findall(r"\d+", str(target_ep))[0])
     except Exception:
-        return all_rows[-window_size:]
+        raw_selected = all_rows[-window_size:]
+        selected_rows = [dict(row) for row in raw_selected]
+        for i in range(len(selected_rows) - 1):
+            selected_rows[i].pop("등장 씬 및 주요 장소", None)
+            selected_rows[i].pop("인물 감정 상태 및 물리적 변화", None)
+            selected_rows[i].pop("장소 및 주요 장소", None)
+        return selected_rows
         
     previous_rows = []
     for row in all_rows:
@@ -237,8 +267,15 @@ def get_episode_memory(novel_root, target_ep, window_size=3):
             continue
             
     previous_rows.sort(key=lambda x: x[0])
-    selected_rows = [item[1] for item in previous_rows[-window_size:]]
+    raw_selected = [item[1] for item in previous_rows[-window_size:]]
     
+    # 토큰 최적화 필터링
+    selected_rows = [dict(row) for row in raw_selected]
+    for i in range(len(selected_rows) - 1):
+        selected_rows[i].pop("등장 씬 및 주요 장소", None)
+        selected_rows[i].pop("인물 감정 상태 및 물리적 변화", None)
+        selected_rows[i].pop("장소 및 주요 장소", None)
+        
     return selected_rows
 
 if __name__ == "__main__":
@@ -249,4 +286,5 @@ if __name__ == "__main__":
     print("Characters Context:", get_context(root, ["백운", "설하"]))
     print("Open Foreshadowing:", get_open_foreshadowing(root))
     print("Episode Memory (Ep 10):", get_episode_memory(root, 10, 3))
+
 

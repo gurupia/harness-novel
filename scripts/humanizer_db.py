@@ -38,58 +38,73 @@ class FallbackVectorDB:
         return sorted_data[:n_results]
 
 # ChromaDB 및 Sentence-Transformers 초기화 시도
+# ChromaDB 및 Sentence-Transformers 초기화 상태 변수
 CHROMA_AVAILABLE = False
 db_client = None
 collection = None
+_initialized = False
 
-try:
-    import chromadb
-    from sentence_transformers import SentenceTransformer
-    
-    # 윈도우 환경 및 huggingface 다운로드 예외를 감안하여 시도
-    # 오프라인 상태이거나 CPU 환경 등에서 예외 발생 가능
-    class TransformerEmbeddingFunction:
-        def __init__(self):
-            # 한국어/다국어 지원 경량 임베딩 모델 사용
-            self.model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
-            
-        def __call__(self, input_texts):
-            embeddings = self.model.encode(input_texts)
-            return [e.tolist() for e in embeddings]
+def _init_db():
+    global CHROMA_AVAILABLE, db_client, collection, _initialized
+    if _initialized:
+        return
+    _initialized = True
 
-    # ChromaDB 메모리 DB 초기화
-    db_client = chromadb.Client()
-    emb_fn = TransformerEmbeddingFunction()
-    
-    # 기존 컬렉션이 있다면 가져오고, 없으면 생성
-    collection = db_client.get_or_create_collection(
-        name="humanizer_few_shot",
-        embedding_function=emb_fn
-    )
-    
-    # 퓨샷 데이터 적재
-    ids = [item["id"] for item in RAW_FEW_SHOT_DATA]
-    documents = [item["draft"] for item in RAW_FEW_SHOT_DATA]
-    metadatas = [{"corrected": item["corrected"], "points": item["points"]} for item in RAW_FEW_SHOT_DATA]
-    
-    collection.add(
-        ids=ids,
-        documents=documents,
-        metadatas=metadatas
-    )
-    CHROMA_AVAILABLE = True
-    print("[Info] ChromaDB & SentenceTransformer loaded successfully.")
+    # 환경변수 'USE_CHROMA'가 활성화되어 있지 않으면 로딩 없이 즉시 Fallback 사용
+    # 이를 통해 PyTorch / SentenceTransformer 로드 및 다운로드 대기 병목(수초~수분)을 완벽히 방지합니다.
+    if os.environ.get("USE_CHROMA", "False").lower() not in ("true", "1", "yes"):
+        collection = FallbackVectorDB()
+        CHROMA_AVAILABLE = False
+        return
 
-except Exception as e:
-    # 라이브러리가 없거나, 네트워크 에러, C++ 컴파일 에러 발생 시 Fallback 작동
-    print(f"[Warning] Failed to initialize ChromaDB ({e}). Switching to Fallback Vector Engine.", file=sys.stderr)
-    collection = FallbackVectorDB()
-    CHROMA_AVAILABLE = False
+    try:
+        import chromadb
+        from sentence_transformers import SentenceTransformer
+        from chromadb.api.types import EmbeddingFunction
+        
+        # ChromaDB 커스텀 임베딩 함수 프로토콜 준수
+        class TransformerEmbeddingFunction(EmbeddingFunction):
+            def __init__(self):
+                self.model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
+                
+            def __call__(self, input_texts):
+                embeddings = self.model.encode(input_texts)
+                return [e.tolist() for e in embeddings]
+
+        # ChromaDB 메모리 DB 초기화
+        db_client = chromadb.Client()
+        emb_fn = TransformerEmbeddingFunction()
+        
+        # 기존 컬렉션이 있다면 가져오고, 없으면 생성
+        collection = db_client.get_or_create_collection(
+            name="humanizer_few_shot",
+            embedding_function=emb_fn
+        )
+        
+        # 퓨샷 데이터 적재
+        ids = [item["id"] for item in RAW_FEW_SHOT_DATA]
+        documents = [item["draft"] for item in RAW_FEW_SHOT_DATA]
+        metadatas = [{"corrected": item["corrected"], "points": item["points"]} for item in RAW_FEW_SHOT_DATA]
+        
+        collection.add(
+            ids=ids,
+            documents=documents,
+            metadatas=metadatas
+        )
+        CHROMA_AVAILABLE = True
+        print("[Info] ChromaDB & SentenceTransformer loaded successfully.")
+
+    except Exception as e:
+        # 라이브러리가 없거나, 네트워크 에러, C++ 컴파일 에러 발생 시 Fallback 작동
+        print(f"[Warning] Failed to initialize ChromaDB ({e}). Switching to Fallback Vector Engine.", file=sys.stderr)
+        collection = FallbackVectorDB()
+        CHROMA_AVAILABLE = False
 
 def get_few_shot_examples(target_draft, n_results=1):
     """
     타겟 초고와 가장 유사한 인간의 교정 사례를 검색하여 문자열 형식으로 반환합니다.
     """
+    _init_db()  # 지연 초기화 수행
     examples_str = ""
     
     if CHROMA_AVAILABLE:
