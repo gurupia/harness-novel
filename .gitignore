@@ -1,0 +1,15 @@
+# 모든 파일 및 폴더 기본 제외
+*
+*/
+
+# 하네스 에이전트 핵심 파일/폴더만 예외 적용 (추적 허용)
+!.gitignore
+!requirements.txt
+!setup_env.bat
+!README.md
+
+!.agents/
+!.agents/**
+
+!scripts/
+!scripts/**
