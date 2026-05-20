@@ -68,12 +68,15 @@ def run_pipeline(novel_root=None, episode_num="011"):
             
     characters_context = parser.get_context(novel_root, character_names)
     open_foreshadowing = parser.get_open_foreshadowing(novel_root)
+    episode_memory = parser.get_episode_memory(novel_root, episode_num, window_size=3)
     
     characters_yaml = yaml.dump(characters_context, allow_unicode=True)
     foreshadowing_yaml = yaml.dump(open_foreshadowing, allow_unicode=True)
+    episode_memory_yaml = yaml.dump(episode_memory, allow_unicode=True)
     
     print(f"Loaded Characters: {list(characters_context.keys())}")
     print(f"Loaded Open Foreshadowing count: {len(open_foreshadowing)}")
+    print(f"Loaded Episode Memory window size: {len(episode_memory)}")
     
     # ----------------------------------------------------
     # Step 2: 01_plot_planner 템플릿 렌더링 -> 결과물 도출(모사)
@@ -83,7 +86,8 @@ def run_pipeline(novel_root=None, episode_num="011"):
         plot_template = env.get_template("templates/01_plot_planner.md.j2")
         plot_prompt = plot_template.render(
             characters_yaml=characters_yaml,
-            open_foreshadowing=foreshadowing_yaml
+            open_foreshadowing=foreshadowing_yaml,
+            episode_memory=episode_memory_yaml
         )
         print("Plot Planner Prompt successfully assembled.")
     except Exception as e:

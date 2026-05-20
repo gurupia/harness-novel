@@ -210,13 +210,43 @@ def get_open_foreshadowing(novel_root):
                     
     return open_foreshadowing
 
+def get_episode_memory(novel_root, target_ep, window_size=3):
+    """
+    episode_memory.md 파일의 테이블을 파싱하여,
+    target_ep 직전의 에피소드 데이터를 window_size 만큼 슬라이딩 윈도우 형태로 반환합니다.
+    """
+    memory_file = os.path.join(novel_root, "03_줄거리", "episode_memory.md")
+    if not os.path.exists(memory_file):
+        return []
+        
+    all_rows = parse_markdown_table_to_dicts(memory_file)
+    
+    try:
+        target_num = int(re.findall(r"\d+", str(target_ep))[0])
+    except Exception:
+        return all_rows[-window_size:]
+        
+    previous_rows = []
+    for row in all_rows:
+        ep_col = row.get("회차", row.get("ep", ""))
+        try:
+            ep_num = int(re.findall(r"\d+", str(ep_col))[0])
+            if ep_num < target_num:
+                previous_rows.append((ep_num, row))
+        except Exception:
+            continue
+            
+    previous_rows.sort(key=lambda x: x[0])
+    selected_rows = [item[1] for item in previous_rows[-window_size:]]
+    
+    return selected_rows
+
 if __name__ == "__main__":
     import sys
-    # 윈도우 터미널 출력 인코딩 보호
     if hasattr(sys.stdout, 'reconfigure'):
         sys.stdout.reconfigure(encoding='utf-8')
-    # 테스트 구동
-    root = r"j:\eBooks\Converted_65001\[TXT소설]\창작소설\SF기계전쟁_폐기처분_로봇군주의정비공"
-    print("Characters Context:", get_context(root, ["강한울", "Unit-X"]))
+    root = r"j:\eBooks\Converted_65001\[TXT소설]\창작소설\성인무협_십이경락의밤"
+    print("Characters Context:", get_context(root, ["백운", "설하"]))
     print("Open Foreshadowing:", get_open_foreshadowing(root))
+    print("Episode Memory (Ep 10):", get_episode_memory(root, 10, 3))
 
