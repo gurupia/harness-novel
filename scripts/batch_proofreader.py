@@ -38,11 +38,24 @@ def run_batch_proofread(novel_root, start_ep, end_ep):
         
         ep_start_time = time.time()
         try:
-            # subprocess.run을 사용하여 출력을 스트리밍하고 에러 감지
-            result = subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="ignore")
+            # subprocess.run을 사용하여 출력을 스트리밍하고 에러 감지 (120초 타임아웃 추가)
+            result = subprocess.run(
+                cmd, 
+                check=True, 
+                stdout=subprocess.PIPE, 
+                stderr=subprocess.PIPE, 
+                text=True, 
+                encoding="utf-8", 
+                errors="ignore",
+                timeout=120
+            )
             ep_duration = time.time() - ep_start_time
             print(f"    -> [Success] Ep.{ep_str} completed in {ep_duration:.2f}s.")
             success_count += 1
+        except subprocess.TimeoutExpired as e:
+            ep_duration = time.time() - ep_start_time
+            print(f"    [Error] Ep.{ep_str} timed out after {ep_duration:.2f}s (120s limit). Skipping to next episode.")
+            continue
         except subprocess.CalledProcessError as e:
             ep_duration = time.time() - ep_start_time
             print(f"    [Error] Ep.{ep_str} failed after {ep_duration:.2f}s.")
